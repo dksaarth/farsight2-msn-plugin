@@ -57,13 +57,13 @@ from fs2_gui_net import  FsUIClient, FsUIListener, FsUIServer
 
 CAMERA=False
 
-AUDIO=True
+AUDIO=False
 VIDEO=True
 
 CLIENT=1
 SERVER=2
 
-TRANSMITTER="rawudp"
+TRANSMITTER="ihavenotransmitter"
 
 mycname = "".join((pwd.getpwuid(os.getuid())[0],
                    "-" ,
@@ -95,7 +95,7 @@ def make_video_sink(pipeline, xid, name, async=True):
 class FsUIPipeline:
     "Object to wrap the GstPipeline"
     
-    def __init__(self, elementname="fsrtpconference"):
+    def __init__(self, elementname="fsmsnconference"):
         self.pipeline = gst.Pipeline()
         notifier = farsight.ElementAddedNotifier()
         notifier.connect("element-added", self.element_added_cb)
@@ -104,7 +104,7 @@ class FsUIPipeline:
         self.pipeline.get_bus().add_watch(self.async_handler)
         self.conf = gst.element_factory_make(elementname)
         # Sets lets our own cname
-        self.conf.set_property("sdes-cname", mycname)
+        self.conf.set_property("local-address", mycname)
         self.pipeline.add(self.conf)
         if VIDEO:
             self.videosource = FsUIVideoSource(self.pipeline)
@@ -299,7 +299,7 @@ class FsUIVideoSource(FsUISource):
     def make_source(self):
         bin = gst.Bin()
         if CAMERA:
-            source = gst.element_factory_make("v4l2src")
+            source = gst.element_factory_make("v4lsrc")
             source.set_property("device", CAMERA)
         else:
             source = gst.element_factory_make("videotestsrc")
@@ -347,49 +347,13 @@ class FsUISession:
         self.fssession = conference.new_session(source.get_type())
         self.fssession.uisession = self
         if source.get_type() == farsight.MEDIA_TYPE_VIDEO:
-            # We prefer H263-1998 because we know it works
-            # We don't know if the others do work
-            # We know H264 doesn't work for now or anything else
-            # that needs to send config data
-            self.fssession.set_codec_preferences( [ \
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "THEORA",
-                               farsight.MEDIA_TYPE_VIDEO,
-                               90000),
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "H264",
-                               farsight.MEDIA_TYPE_VIDEO,
-                               0),
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "H263-1998",
-                               farsight.MEDIA_TYPE_VIDEO,
-                               0),
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "H263",
-                               farsight.MEDIA_TYPE_VIDEO,
-                               0)
-                ])
+            #codec setup ?
+            print "In FsUISession - source.get_type = MTVideo"
+            
         elif source.get_type() == farsight.MEDIA_TYPE_AUDIO:
-            self.fssession.set_codec_preferences( [ \
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "SPEEX",
-                               farsight.MEDIA_TYPE_AUDIO,
-                               16000),
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "PCMA",
-                               farsight.MEDIA_TYPE_AUDIO,
-                               0),
-                farsight.Codec(farsight.CODEC_ID_ANY,
-                               "PCMU",
-                               farsight.MEDIA_TYPE_AUDIO,
-                               0),
-                # Sadly, vorbis is not currently compatible with live streaming :-(
-                farsight.Codec(farsight.CODEC_ID_DISABLE,
-                               "VORBIS",
-                               farsight.MEDIA_TYPE_AUDIO,
-                               0),
-                ])
-
+            #codec setup ?
+            print "In FsUISession - source.get_type = MTAudio"
+            
         self.sourcepad = self.source.get_src_pad()
         self.sourcepad.link(self.fssession.get_property("sink-pad"))
 
@@ -689,7 +653,7 @@ class FsMainUI:
     def __init__(self, mode, ip, port):
         self.mode = mode
         self.pipeline = FsUIPipeline()
-        self.pipeline.codecs_changed_audio = self.reset_audio_codecs
+        #self.pipeline.codecs_changed_audio = self.reset_audio_codecs
         self.pipeline.codecs_changed_video = self.reset_video_codecs
         self.glade = gtk.glade.XML(gladefile, "main_window")
         self.glade.signal_autoconnect(self)
@@ -701,7 +665,7 @@ class FsMainUI:
         cell = gtk.CellRendererText()
         self.audio_combobox.pack_start(cell, True)
         self.audio_combobox.add_attribute(cell, 'text', 0)
-        self.reset_audio_codecs()
+        #self.reset_audio_codecs()
         liststore = gtk.ListStore(gobject.TYPE_STRING, gobject.TYPE_PYOBJECT)
         self.video_combobox.set_model(liststore)
         cell = gtk.CellRendererText()
@@ -738,9 +702,9 @@ class FsMainUI:
                 combobox.set_active_iter(iter)
                 print "active: "+ c.to_string()
 
-    def reset_audio_codecs(self):
-        self.reset_codecs(self.audio_combobox,
-                          self.pipeline.audiosession.fssession)
+    #def reset_audio_codecs(self):
+    #    self.reset_codecs(self.audio_combobox,
+    #                      self.pipeline.audiosession.fssession)
 
     def reset_video_codecs(self):
         self.reset_codecs(self.video_combobox,
