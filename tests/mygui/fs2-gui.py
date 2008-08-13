@@ -111,12 +111,12 @@ class FsUIPipeline:
             self.videosession = FsUISession(self.conf, self.videosource)
             
 
-        fakesink = gst.element_factory_make("fakesink")
+        fakesink = gst.element_factory_make("fakesink","fakesink")
         self.pipeline.add(fakesink)
         
-        colorspace = gst.element_factory_make("ffmpegcolorspace")
+        colorspace = gst.element_factory_make("ffmpegcolorspace","fakesinkfilter")
         self.pipeline.add(colorspace)
-        videoscale = gst.element_factory_make("videoscale")
+        videoscale = gst.element_factory_make("videoscale","fakesinkscale")
         self.pipeline.add(videoscale)
         videoscale.link(colorspace)
         colorspace.link(fakesink)
@@ -286,11 +286,15 @@ class FsUISource:
 
     def get_src_pad(self, name="src%d"):
         "Gets a source pad from the source"
+
         queue = gst.element_factory_make("queue")
         queue.set_property("leaky", 2)
         queue.set_property("max-size-time", 50*gst.MSECOND)
+        
         requestpad = self.tee.get_request_pad(name)
         self.pipeline.add(queue)
+        queue.set_state(gst.STATE_PLAYING)
+        
         requestpad.link(queue.get_static_pad("sink"))
         pad = queue.get_static_pad("src")
         pad.set_data("requestpad", requestpad)
@@ -324,9 +328,11 @@ class FsUIVideoSource(FsUISource):
         filter.set_property("caps", gst.Caps("video/x-raw-yuv , width=[300,500] , height=[200,500], framerate=[20/1,30/1]"))
         bin.add(filter)
         source.link(filter)
-
+        filter.set_state(gst.STATE_PLAYING)
+        
         videoscale = gst.element_factory_make("videoscale")
         bin.add(videoscale)
+        videoscale.set_state(gst.STATE_PLAYING)
         filter.link(videoscale)
         bin.add_pad(gst.GhostPad("src", videoscale.get_pad("src")))
         return bin
@@ -380,32 +386,33 @@ class FsUISession:
         "Creates a new stream for a specific participant"
         print "New Stream being created"
         transmitter_params = {}
-        # If its video, we start at port 9078, to make it more easy
-        # to differentiate it in a tcpdump log
-        if self.source.get_type() == farsight.MEDIA_TYPE_VIDEO and \
-               TRANSMITTER == "rawudp":
-            cand = farsight.Candidate()
-            cand.component_id = farsight.COMPONENT_RTP
-            cand.port = 9078
-            transmitter_params["preferred-local-candidates"] = [cand]
-        elif self.source.get_type() == farsight.MEDIA_TYPE_VIDEO and \
-             TRANSMITTER == "":
-            cand = farsight.Candidate()
-            cand.port = 9999
-            transmitter_params["preferred-local-candidates"] = [cand]
-            
+                  
         realstream = self.fssession.new_stream(participant.fsparticipant,
                                              direction,
                                              TRANSMITTER, transmitter_params)
-        #if direction == farsight.DIRECTION_SEND:
-        self.sourcepad = self.source.get_src_pad()
-        print "Linking in source"
-        self.sourcepad.link(realstream.get_property("sink-pad"))
+        if direction == farsight.DIRECTION_SEND:
+            self.sourcepad = self.source.get_src_pad()
+            print "Linking in source"
+            self.sourcepad.link(realstream.get_property("sink-pad"))
+            #fakesink = gst.element_factory_make("ximagesink","tempximagesink")
+            #self.source.pipeline.add(fakesink)
+            #fakesink.set_state(gst.STATE_PLAYING)
+            
+            #colorspace = gst.element_factory_make("ffmpegcolorspace","tempfakesinkfilter")
+            #self.source.pipeline.add(colorspace)
+            #colorspace.set_state(gst.STATE_PLAYING)
+            #videoscale = gst.element_factory_make("videoscale","tempfakesinkscale")
+            #self.source.pipeline.add(videoscale)
+            #videoscale.set_state(gst.STATE_PLAYING)
+            #videoscale.link(colorspace)
+            #colorspace.link(fakesink)
+            
+            #sink_pad = videoscale.get_pad("sink")
+
+            #self.sourcepad.link(sink_pad)
 
         stream = FsUIStream(id, self, participant, realstream)
-        self.streams.append(weakref.ref(stream, self.__stream_finalized))
-        
-        self.source.pipeline.set_state(gst.STATE_PLAYING)  
+        self.streams.append(weakref.ref(stream, self.__stream_finalized))  
         return stream
 
     def dtmf_start(self, event, method):
@@ -581,7 +588,7 @@ class FsUIParticipant:
                 self.pipeline.pipeline.add(self.funnel)
                 self.funnel.link(self.videosink)
                 self.havesize = self.videosink.get_pad("sink").add_buffer_probe(self.have_size)
-
+                print "is this playing silly buggers? "
                 self.videosink.set_state(gst.STATE_PLAYING)
                 self.funnel.set_state(gst.STATE_PLAYING)
                 self.outcv.notifyAll()
@@ -650,22 +657,22 @@ class FsUIParticipant:
 
     def recv_codecs_changed(self):
         codecs = {}
-        for s in self.streams:
-            codec = self.streams[s].fsstream.get_property("current-recv-codecs")
-            mediatype = self.streams[s].session.fssession.get_property("media-type")
-            if len(codec):
-                if mediatype in codecs:
-                    codecs[mediatype] += codec
-                else:
-                    codecs[mediatype] = codec
-        str = ""
-        for mt in codecs:
-            str += "<big>" +mt.value_nick.title() + "</big>:\n"
-            for c in codecs[mt]:
-                str += "  <b>%s</b>: %s %s\n" % (c.id, 
-                                                 c.encoding_name,
-                                                 c.clock_rate)
-        self.label.set_markup(str)
+        #for s in self.streams:
+            #codec = self.streams[s].fsstream.get_property("current-recv-codecs")
+            #mediatype = self.streams[s].session.fssession.get_property("media-type")
+            #if len(codec):
+                #if mediatype in codecs:
+                    #codecs[mediatype] += codec
+                #else:
+                    #codecs[mediatype] = codec
+        #str = ""
+        #for mt in codecs:
+            #str += "<big>" +mt.value_nick.title() + "</big>:\n"
+            #for c in codecs[mt]:
+                #str += "  <b>%s</b>: %s %s\n" % (c.id, 
+                                                 #c.encoding_name,
+                                                 #c.clock_rate)
+        #self.label.set_markup(str)
                 
 class FsUIParticipant2:
     "Wraps one FsParticipant, is one user remote contact"
@@ -737,7 +744,7 @@ class FsUIParticipant2:
                 self.pipeline.pipeline.add(self.funnel)
                 self.funnel.link(self.videosink)
                 self.havesize = self.videosink.get_pad("sink").add_buffer_probe(self.have_size)
-
+                print "or is this one "
                 self.videosink.set_state(gst.STATE_PLAYING)
                 self.funnel.set_state(gst.STATE_PLAYING)
                 self.outcv.notifyAll()
